@@ -1,8 +1,8 @@
 # dataintegrity
 
-**A production-grade Python SDK for data integrity, quality scoring, PII detection, statistical drift detection, and dataset versioning.**
+**A production-grade Python SDK for data integrity, quality scoring, PII detection, statistical drift detection, and reproducible auditing.**
 
-> v0.2 — State-aware data integrity system with historical comparison engine
+> v0.2.1 — Deterministic data infrastructure with risk-weighted scoring and database support
 
 ---
 
@@ -10,250 +10,136 @@
 
 | Capability | Status |
 |---|---|
-| CSV & PostgreSQL connectors | ✅ |
-| Large CSV safety (auto-sampling > 50 MB) | ✅ |
-| Column normalisation | ✅ |
-| Schema contract enforcement | ✅ |
-| PII detection (email, phone, SSN, CC) | ✅ |
-| Completeness, Uniqueness, Validity, Consistency, Timeliness rules | ✅ |
-| Composite DataScore (weighted, 0–100) | ✅ |
-| SHA-256 dataset fingerprint | ✅ |
-| Statistical drift detection (KS test) | ✅ |
-| **Dataset versioning (v0.2)** | ✅ |
-| **Local baseline store (v0.2)** | ✅ |
-| **Historical comparison engine (v0.2)** | ✅ |
-| **Score delta + severity tracking (v0.2)** | ✅ |
-| CLI audit command | ✅ |
-| **CLI --track & --history flags (v0.2)** | ✅ |
+| CSV & PostgreSQL Connectors | ✅ |
+| **Database Audits (v0.2.1)** | ✅ |
+| Large CSV Safety (auto-sampling) | ✅ |
+| Column Normalisation | ✅ |
+| Schema Contract Enforcement | ✅ |
+| PII Detection (Email, Phone, SSN, etc.) | ✅ |
+| Completeness, Uniqueness, Validity, Consistency, Timeliness Rules | ✅ |
+| **Rule Plugin System (v0.2.1)** | ✅ |
+| **Risk-Weighted DataScore (v0.2.1)** | ✅ |
+| **Deterministic Execution Manifests (v0.2.1)** | ✅ |
+| **Configuration Hashing (v0.2.1)** | ✅ |
+| **Local Audit History Tracking (v0.2.1)** | ✅ |
+| Dataset Versioning & Drift Detection | ✅ |
+| CLI Audit Tool (with JSON output) | ✅ |
 
 ---
 
 ## Installation
 
 ```bash
-# Editable install (recommended for development)
-pip install -e .
+# Recommended: Editable install for development
+pip install -e ".[dev]"
 
-# Or standard install
+# Direct install
 pip install dataintegrity
 ```
 
 ---
 
-## Quick Start — CLI (v0.2)
+## Quick Start — CLI (v0.2.1)
 
-### Single audit
+### 1. File-based Audit
 ```bash
+# Basic CSV audit
 dataintegrity audit sample.csv
+
+# Audit with JSON output, manifest generation, and history tracking
+dataintegrity audit sample.csv --output json --save-manifest --save-history
 ```
 
-### Track versions and compare
+### 2. Database Audit (New in v0.2.1)
 ```bash
-# First run — establishes baseline
+# Audit a specific table
+dataintegrity audit --dsn "postgresql://user:pass@localhost:5432/db" --table users
+
+# Audit via custom SQL query
+dataintegrity audit --dsn "postgresql://user:pass@localhost:5432/db" --query "SELECT * FROM orders WHERE amount > 100"
+```
+
+### 3. Versions & Drift
+```bash
+# First run — baseline
 dataintegrity audit sample.csv --track
 
-# Second run — compares against baseline
+# Subsequent run — compares and detects drift
 dataintegrity audit sample.csv --track
-```
-
-**Example `--track` output (second run):**
-```
-💾  Version saved  id=a3b4c5d6e7f80001
-
-────────────────────────────────────────────────────────────
-  DELTA COMPARISON REPORT
-────────────────────────────────────────────────────────────
-  Previous DataScore : 89.3
-  Current  DataScore : 85.1
-  Delta              : -4.2  (MODERATE)
-  Baseline version   : f1e2d3c4b5a60001
-
-────────────────────────────────────────────────────────────
-  DIMENSION DELTAS
-────────────────────────────────────────────────────────────
-  completeness     -3.50%
-  uniqueness       -1.20%
-  validity          0.00%
-  consistency      -0.80%
-  timeliness        0.00%
-
-────────────────────────────────────────────────────────────
-  DRIFT DETECTION (KS TEST)
-────────────────────────────────────────────────────────────
-  ⚠  Drift detected in:
-      - transaction_amount
-      - session_duration
-────────────────────────────────────────────────────────────
-```
-
-### Show version history
-```bash
-dataintegrity audit sample.csv --history
-```
-
-**Example output:**
-```
-────────────────────────────────────────────────────────────
-  VERSION HISTORY
-────────────────────────────────────────────────────────────
-  [ 1]  2026-02-22 10:00:00 UTC  score=89.3  id=f1e2d3c4b5a60001
-  [ 2]  2026-02-22 10:15:00 UTC  score=85.1  id=a3b4c5d6e7f80001
-────────────────────────────────────────────────────────────
-```
-
-### Combined flags
-```bash
-dataintegrity audit sample.csv --track --history
 ```
 
 ---
 
-## Severity Scale
+## Architectural Hardening (v0.2.1)
 
-| Level | Score Drop |
-|---|---|
-| 🟢 STABLE | < 2 points |
-| 🔵 MINOR | 2–5 points |
-| 🟡 MODERATE | 5–10 points |
-| 🔴 CRITICAL | ≥ 10 points |
+### Deterministic Manifests
+Every run produces an `ExecutionManifest` (record) or `.manifest.json` file. This captures:
+* **Environment Fingerprint**: OS, Python, and exact library versions (Pandas, NumPy, etc.).
+* **Config Hash**: A SHA-256 hash of your settings to ensure audits are reproducible.
 
----
+### Risk-Weighted Scoring
+Rules are no longer treated equally. Failures in **HIGH** severity dimensions (like Completeness) penalize the composite `DataScore` more heavily than **LOW** severity failures (like Timeliness).
 
-## Version Storage
-
-Versions are stored locally under `~/.dataintegrity/versions/`, one JSON file per data source:
-
-```
-~/.dataintegrity/versions/
-    <sha256-of-source-path>.json   # all versions for one source
-```
-
-File structure:
-```json
-{
-  "source": "/path/to/sample.csv",
-  "versions": [
-    {
-      "version_id": "f1e2d3c4b5a60001",
-      "timestamp": "2026-02-22T10:00:00+00:00",
-      "fingerprint": "3f4a1b2c...",
-      "data_score": 89.3,
-      "dimension_scores": { "completeness": 0.95, "..." : "..." },
-      "source": "/path/to/sample.csv"
-    }
-  ]
-}
-```
+### History Store
+Audits are now tracked locally in `~/.dataintegrity/history/`. This enables long-term trend analysis of your data quality.
 
 ---
 
 ## Quick Start — Python SDK
 
-### Basic audit
+### PostgreSQL Audit
 ```python
-from dataintegrity.connectors.csv import CSVConnector
+from dataintegrity.connectors.postgres import PostgresConnector
 from dataintegrity.core.dataset import Dataset
 from dataintegrity.integrity.engine import IntegrityEngine
 
-connector = CSVConnector("sample.csv")
+connector = PostgresConnector(
+    host="localhost", database="db", user="user", password="pass",
+    query="SELECT * FROM users"
+)
 connector.connect()
 df = connector.fetch()
 
-dataset = Dataset(df, source="sample.csv")
+dataset = Dataset(df, source="postgres:users")
 result = IntegrityEngine().run(dataset)
-print(f"DataScore: {result['data_score']}")
+
+print(f"Composite Score: {result.overall_score}")
 ```
 
-### Versioning and comparison
+### Rule Plugin System
 ```python
-from dataintegrity.core.versioning import DatasetVersion
-from dataintegrity.core.store import LocalVersionStore
-from dataintegrity.integrity.comparison import IntegrityComparator
+from dataintegrity.integrity.plugins import register_rule, IntegrityRule, RuleResult
 
-store = LocalVersionStore()
-
-# After running the engine:
-version = DatasetVersion(dataset)  # captures score + fingerprint
-store.save(version)
-
-# On next run:
-previous = store.load_latest("sample.csv")
-current = DatasetVersion(new_dataset)
-
-comparator = IntegrityComparator()
-report = comparator.compare_versions(current, previous)
-print(report)
-# {
-#   "score_delta": -4.2,
-#   "dimension_deltas": {"completeness": -0.035, ...},
-#   "drifted_columns": ["transaction_amount", "session_duration"],
-#   "severity": "moderate",
-#   ...
-# }
-```
-
-### Large file safety
-```python
-# Auto-samples if > 50 MB (logged as WARNING)
-connector = CSVConnector("huge.csv")
-connector.connect()
-df = connector.fetch()
-
-# Explicit sampling
-connector = CSVConnector("huge.csv", sample_size=50_000)
-
-# Chunked streaming
-connector = CSVConnector("huge.csv", chunk_size=10_000, sample_size=50_000)
+@register_rule
+class MyCustomRule(IntegrityRule):
+    id = "custom_check"
+    severity = "MEDIUM"
+    
+    def evaluate(self, dataset, config) -> RuleResult:
+        # Custom logic here
+        return RuleResult(passed=True, metric_value=1.0, ...)
 ```
 
 ---
 
-## Package Structure (v0.2)
+## Package Structure (v0.2.1)
 
 ```
 dataintegrity/
-├── connectors/
-│   ├── base.py             # Abstract connector
-│   ├── csv.py              # CSV connector (+ large-file safety)
-│   └── postgres.py         # PostgreSQL connector
-├── ingestion/
-│   ├── normalizer.py       # Column normalisation
-│   ├── pii.py              # PII detection
-│   └── schema_contract.py  # Schema enforcement
-├── integrity/
-│   ├── rules.py            # Quality rules (5 dimensions)
-│   ├── scorer.py           # DataScorer (weighted aggregation)
-│   ├── engine.py           # IntegrityEngine (orchestration)
-│   └── comparison.py       # IntegrityComparator (NEW v0.2)
-├── drift/
-│   └── ks.py               # KS-test drift detection
 ├── core/
-│   ├── config.py           # IntegrityConfig
-│   ├── dataset.py          # Dataset abstraction
-│   ├── hashing.py          # SHA-256 fingerprinting
-│   ├── versioning.py       # DatasetVersion (NEW v0.2)
-│   └── store.py            # LocalVersionStore (NEW v0.2)
-└── cli.py                  # CLI (+ --track, --history)
-```
-
----
-
-## Configuration
-
-```python
-from dataintegrity.core.config import IntegrityConfig
-
-config = IntegrityConfig(
-    drift_p_threshold=0.01,          # Stricter drift detection
-    timeliness_max_age_days=7,       # Data must be < 7 days old
-    score_weights={
-        "completeness": 0.40,
-        "uniqueness":   0.20,
-        "validity":     0.20,
-        "consistency":  0.10,
-        "timeliness":   0.10,
-    },
-)
+│   ├── config_hashing.py   # Deterministic hashing
+│   ├── execution.py        # ExecutionManifests
+│   ├── result_schema.py    # Structured DatsetAuditResult
+│   └── ... ( hshing, versioning, store )
+├── integrity/
+│   ├── plugins.py          # Rule plugin framework
+│   ├── risk_model.py       # Severity-based weighting
+│   ├── history.py          # Local history tracking
+│   └── ... ( rules, scorer, engine )
+├── connectors/             # CSV & Postgres
+├── ingestion/              # Normalization & PII
+├── drift/                  # KS-test
+└── cli.py                  # Multi-source CLI
 ```
 
 ---
@@ -261,30 +147,19 @@ config = IntegrityConfig(
 ## All CLI Options
 
 ```
-Usage: dataintegrity audit [OPTIONS] FILEPATH
+Usage: dataintegrity audit [OPTIONS] [FILEPATH]
 
 Options:
-  --encoding TEXT        CSV file encoding.  [default: utf-8-sig]
-  --delimiter TEXT       CSV column delimiter.  [default: ,]
-  --no-normalize         Skip column-name normalisation.
-  --json-output          Print results as JSON instead of formatted text.
-  --pii-threshold FLOAT  Drift p-value threshold.  [default: 0.05]
-  --sample-size INT      Max rows to read (large CSV safety).
-  --track                Save version and compare to previous.
+  --dsn TEXT             PostgreSQL connection DSN.
+  --table TEXT           Database table name to audit.
+  --query TEXT           Custom SQL query to audit.
+  --output [pretty|json] Output format. [default: pretty]
+  --save-manifest        Save execution metadata to file.
+  --save-history         Record run to local history store.
+  --track                Save version and compare to baseline.
   --history              Show version history for this source.
   --help                 Show this message and exit.
 ```
-
----
-
-## Roadmap (post-v0.2)
-
-- [ ] JSON / Parquet / S3 connectors
-- [ ] API server (FastAPI)
-- [ ] Monitoring dashboard
-- [ ] Rule extensibility framework
-- [ ] JWT-secured audit certification
-- [ ] Slack / webhook alerting
 
 ---
 

@@ -110,7 +110,19 @@ def cli():
 # ---------------------------------------------------------------------------
 
 @cli.command()
-@click.argument("filepath", type=click.Path(exists=True, dir_okay=False))
+@click.argument("filepath", type=click.Path(exists=True, dir_okay=False), required=False)
+@click.option(
+    "--dsn", type=str,
+    help="PostgreSQL connection DSN (e.g. postgresql://user:pass@host:port/db).",
+)
+@click.option(
+    "--table", type=str,
+    help="Database table name to audit (requires --dsn).",
+)
+@click.option(
+    "--query", type=str,
+    help="Custom SQL query to audit (requires --dsn).",
+)
 @click.option(
     "--encoding", default="utf-8-sig", show_default=True,
     help="CSV file encoding.",
@@ -158,7 +170,10 @@ def cli():
     help="Record this audit result in the local history store (~/.dataintegrity/history).",
 )
 def audit(
-    filepath: str,
+    filepath: Optional[str],
+    dsn: Optional[str],
+    table: Optional[str],
+    query: Optional[str],
     encoding: str,
     delimiter: str,
     no_normalize: bool,
@@ -172,10 +187,10 @@ def audit(
     save_history: bool,
 ):
     """
-    Run a full data integrity audit on a CSV file.
+    Run a full data integrity audit on a CSV file or PostgreSQL database.
 
     \b
-    FILEPATH  Path to the CSV file to audit.
+    FILEPATH  Path to the CSV file to audit (not required if --dsn is used).
 
     Outputs:
       - DataScore (0–100 composite quality score)
@@ -191,24 +206,71 @@ def audit(
     if json_output:
         output_format = "json"
 
+    # Validation: Ensure either filepath or dsn is provided
+    if not filepath and not dsn:
+        raise click.UsageError("Either FILEPATH or --dsn must be provided.")
+    if filepath and dsn:
+        raise click.UsageError("Cannot provide both FILEPATH and --dsn. Choose one.")
+
     config = IntegrityConfig(drift_p_threshold=pii_threshold)
 
     # ---- Load ----
-    click.echo(f"\n🔍  Loading  {click.style(filepath, fg='cyan', bold=True)}")
-    connector = CSVConnector(
-        filepath,
-        encoding=encoding,
-        delimiter=delimiter,
-        sample_size=sample_size,
-    )
-    try:
-        connector.connect()
-        df = connector.fetch()
-    except Exception as exc:
-        click.echo(click.style(f"\n✗  Could not load file: {exc}", fg="red"), err=True)
-        sys.exit(1)
+    if dsn:
+        # PostgreSQL Path
+        from dataintegrity.connectors.postgres import PostgresConnector
+        if not query and not table:
+            raise click.UsageError("Audit via --dsn requires either --table or --query.")
+        
+        sql_query = query if query else f"SELECT * FROM {table}"
+        source_id = table if table else f"query:{hash(sql_query)}"
+        
+        click.echo(f"\n🔗  Connecting to Database …")
+        # Simplified DSN parsing for the connector (it expects host, port, etc separately)
+        # However, PostgresConnector can be improved to handle DSN directly or we parse here.
+        # For now, let's assume SQLAlchemy create_engine in the connector handles the URL.
+        # We need to refine PostgresConnector to accept a single URL/DSN or parse it.
+        
+        # Refined Logic: We'll parse the DSN here or pass it directly.
+        # Let's check how PostgresConnector is built. It expects host, port, db, user, pass.
+        # I will update PostgresConnector later to handle DSN or parse it here.
+        
+        from sqlalchemy.engine import make_url
+        try:
+            url = make_url(dsn)
+            connector = PostgresConnector(
+                host=url.host or "localhost",
+                port=url.port or 5432,
+                database=url.database or "",
+                user=url.username or "",
+                password=url.password or "",
+                query=sql_query
+            )
+            connector.connect()
+            df = connector.fetch()
+        except Exception as exc:
+            click.echo(click.style(f"\n✗  Database error: {exc}", fg="red"), err=True)
+            sys.exit(1)
+        
+        source_label = f"DB:{source_id}"
+    else:
+        # CSV Path
+        click.echo(f"\n🔍  Loading  {click.style(filepath, fg='cyan', bold=True)}") # type: ignore
+        connector = CSVConnector(
+            filepath, # type: ignore
+            encoding=encoding,
+            delimiter=delimiter,
+            sample_size=sample_size,
+        )
+        try:
+            connector.connect()
+            df = connector.fetch()
+        except Exception as exc:
+            click.echo(click.style(f"\n✗  Could not load file: {exc}", fg="red"), err=True)
+            sys.exit(1)
+        
+        source_label = filepath # type: ignore
 
-    dataset = Dataset(df, source=filepath)
+    dataset = Dataset(df, source=source_label)
     click.echo(f"   Loaded {dataset.shape[0]:,} rows × {dataset.shape[1]} columns.")
 
     # ---- Normalize ----
@@ -232,7 +294,9 @@ def audit(
 
     # ---- Save Manifest ----
     if save_manifest:
-        manifest_path = Path(filepath).with_suffix(".manifest.json")
+        # For DB runs, we save to a specific metadata folder or source_id.manifest.json
+        manifest_filename = f"{source_id}.manifest.json" if dsn else Path(filepath).with_suffix(".manifest.json") # type: ignore
+        manifest_path = Path(manifest_filename)
         manifest_path.write_text(audit_result.manifest.to_json(), encoding="utf-8")
         click.echo(
             f"📄  Manifest saved → {click.style(str(manifest_path), fg='cyan')}"
@@ -261,12 +325,12 @@ def audit(
 
     # Human-readable audit report — uses legacy dict for renderer compat
     legacy = audit_result.to_legacy_dict()
-    _print_audit_report(filepath, legacy, pii_report, dataset)
+    _print_audit_report(source_label, legacy, pii_report, dataset) # type: ignore
 
     # ---- Versioning / History ----
     if track or history:
         _handle_versioning(
-            filepath=filepath,
+            filepath=source_label, # type: ignore
             dataset=dataset,
             config=config,
             do_track=track,
