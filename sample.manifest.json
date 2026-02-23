@@ -1,0 +1,25 @@
+{
+  "run_id": "63ef4a6f-7154-4ae3-a71a-63b79fd56714",
+  "timestamp": "2026-02-23T04:05:21.561152+00:00",
+  "dataset_fingerprint": "932c1aaa36a487e29990b039379f73b75c82cfcb9c27add847665b8c2fe6dafa",
+  "config_hash": "668271d5091384374e3557ca949c158bac3034662267328c90d8e5ea8b02775d",
+  "sdk_version": "0.2.1",
+  "python_version": "3.14.2 (main, Dec  5 2025, 00:00:00) [GCC 15.2.1 20251111 (Red Hat 15.2.1-4)]",
+  "environment": {
+    "os": "Linux",
+    "os_release": "6.18.8-200.fc43.x86_64",
+    "python_version": "3.14.2 (main, Dec  5 2025, 00:00:00) [GCC 15.2.1 20251111 (Red Hat 15.2.1-4)]",
+    "pandas_version": "3.0.0",
+    "numpy_version": "2.3.5",
+    "scipy_version": "1.17.0"
+  },
+  "rules_executed": [
+    "completeness",
+    "uniqueness",
+    "validity",
+    "consistency",
+    "timeliness"
+  ],
+  "drift_checks_executed": [],
+  "final_score": 81.14
+}

@@ -1,0 +1,21 @@
+customer_id,first_name,last_name,email,phone,age,score,salary,signup_date,status,notes
+1001,Alice,Johnson,alice.johnson@example.com,+1-800-555-0101,29,87.5,72000,2024-08-15,active,VIP customer
+1002,Bob,Smith,bob.smith@example.com,555-234-5678,34,62.0,55000,2024-06-01,active,
+1003,Carol,Williams,,+44 7911 123456,41,91.2,98000,2023-11-20,inactive,Moved overseas
+1004,Dave,Brown,dave.brown@example.com,,28,45.0,48000,2024-01-10,active,First-time buyer
+1005,Eve,Davis,eve.davis@example.com,+1-800-555-0202,55,78.3,115000,2022-03-05,active,Senior account
+1006,,Jones,invalid-email,123-456-7890,,,30000,2024-09-01,pending,Missing first name
+1007,Frank,Miller,frank.miller@example.com,+1-800-555-0303,38,88.0,82000,2024-07-22,active,
+1008,Grace,Wilson,grace.wilson@example.com,,22,55.5,42000,2024-10-30,active,Student discount
+1009,Heidi,Moore,,555-987-6543,,,60000,,active,No signup date
+1010,Ivan,Taylor,ivan.taylor@example.com,+1-800-555-0404,47,70.1,91000,2023-05-18,inactive,Account closed
+1011,Judy,Anderson,judy.anderson@example.com,+1-800-555-0505,31,93.4,67000,2024-11-01,active,Referred by Frank
+1012,Karl,Thomas,,,,82.0,,2024-02-14,active,Missing contact info
+1013,Laura,Jackson,laura.jackson@example.com,+1-800-555-0606,26,66.8,53000,2024-04-09,active,
+1014,Mallory,White,mallory.white@example.com,555-111-2222,39,77.2,74000,2024-08-30,active,Duplicate: see 1015
+1015,Mallory,White,mallory.white@example.com,555-111-2222,39,77.2,74000,2024-08-30,active,Duplicate: see 1014
+1016,Niaj,Harris,niaj.harris@example.com,+1-800-555-0707,52,84.6,102000,2023-08-12,active,
+1017,Olivia,Martin,olivia.martin@example.com,+1-800-555-0808,44,59.0,68000,2024-03-27,active,Loyalty member
+1018,Peggy,Garcia,peggy.garcia@example.com,,33,71.5,57000,2024-12-05,active,
+1019,Quentin,Martinez,,+1-800-555-0909,60,90.0,130000,2022-01-15,active,Premium tier
+1020,Rupert,Robinson,rupert.robinson@example.com,555-333-4444,25,48.3,39000,2025-01-20,active,New customer
