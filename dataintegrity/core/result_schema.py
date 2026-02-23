@@ -109,6 +109,8 @@ class DatasetAuditResult:
     dimension_scores: Dict[str, float]
     shape: Tuple[int, int]
     source: Optional[str] = None
+    standards_alignment: Optional[Dict[str, Any]] = None
+    policy_evaluation: Optional[Dict[str, Any]] = None
 
     # ------------------------------------------------------------------
     # Serialisation
@@ -132,6 +134,8 @@ class DatasetAuditResult:
             "dimension_scores": self.dimension_scores,
             "shape": list(self.shape),
             "source": self.source,
+            "standards_alignment": self.standards_alignment,
+            "policy_evaluation": self.policy_evaluation,
         }
 
     def to_json(self, indent: int = 2) -> str:

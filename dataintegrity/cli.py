@@ -31,6 +31,7 @@ from typing import Optional
 
 import click
 
+from dataintegrity import __version__
 from dataintegrity.connectors.csv import CSVConnector
 from dataintegrity.core.config import IntegrityConfig
 from dataintegrity.core.dataset import Dataset
@@ -100,9 +101,9 @@ def _delta_style(delta: float) -> str:
 # ---------------------------------------------------------------------------
 
 @click.group()
-@click.version_option(version="0.2.1", prog_name="dataintegrity")
+@click.version_option(version=__version__, prog_name="dataintegrity", message="%(prog)s %(version)s")
 def cli():
-    """dataintegrity — Data Infrastructure SDK audit toolkit (v0.2.1)."""
+    """dataintegrity — Data Infrastructure SDK audit toolkit (v0.2.2)."""
 
 
 # ---------------------------------------------------------------------------
@@ -122,6 +123,14 @@ def cli():
 @click.option(
     "--query", type=str,
     help="Custom SQL query to audit (requires --dsn).",
+)
+@click.option(
+    "--profile", type=click.Choice(["iso-25012"], case_sensitive=False),
+    help="Apply a standards alignment profile (e.g. iso-25012).",
+)
+@click.option(
+    "--policy", type=click.Choice(["research", "production"], case_sensitive=False),
+    help="Enforce a governance policy (e.g. research, production).",
 )
 @click.option(
     "--encoding", default="utf-8-sig", show_default=True,
@@ -174,6 +183,8 @@ def audit(
     dsn: Optional[str],
     table: Optional[str],
     query: Optional[str],
+    profile: Optional[str],
+    policy: Optional[str],
     encoding: str,
     delimiter: str,
     no_normalize: bool,
@@ -224,7 +235,8 @@ def audit(
         sql_query = query if query else f"SELECT * FROM {table}"
         source_id = table if table else f"query:{hash(sql_query)}"
         
-        click.echo(f"\n🔗  Connecting to Database …")
+        if output_format != "json":
+            click.echo(f"\n🔗  Connecting to Database …")
         # Simplified DSN parsing for the connector (it expects host, port, etc separately)
         # However, PostgresConnector can be improved to handle DSN directly or we parse here.
         # For now, let's assume SQLAlchemy create_engine in the connector handles the URL.
@@ -254,7 +266,8 @@ def audit(
         source_label = f"DB:{source_id}"
     else:
         # CSV Path
-        click.echo(f"\n🔍  Loading  {click.style(filepath, fg='cyan', bold=True)}") # type: ignore
+        if output_format != "json":
+            click.echo(f"\n🔍  Loading  {click.style(filepath, fg='cyan', bold=True)}") # type: ignore
         connector = CSVConnector(
             filepath, # type: ignore
             encoding=encoding,
@@ -271,26 +284,67 @@ def audit(
         source_label = filepath # type: ignore
 
     dataset = Dataset(df, source=source_label)
-    click.echo(f"   Loaded {dataset.shape[0]:,} rows × {dataset.shape[1]} columns.")
+    if output_format != "json":
+        click.echo(f"   Loaded {dataset.shape[0]:,} rows × {dataset.shape[1]} columns.")
 
     # ---- Normalize ----
     if not no_normalize:
         normalizer = Normalizer()
         dataset = normalizer.normalize(dataset)
-        click.echo("   Column names normalised.")
+        if output_format != "json":
+            click.echo("   Column names normalised.")
 
     # ---- Integrity Engine ----
-    click.echo("\n⚙️   Running integrity engine …")
+    if output_format != "json":
+        click.echo("\n⚙️   Running integrity engine …")
     engine = IntegrityEngine(config=config)
-    audit_result: DatasetAuditResult = engine.run(dataset)
+    audit_result: DatasetAuditResult = engine.run(dataset, profile=profile)
 
     # ---- PII Scan ----
-    click.echo("🔒  Scanning for PII …")
+    if output_format != "json":
+        click.echo("🔒  Scanning for PII …")
     pii_detector = PIIDetector(config=config)
     pii_report = pii_detector.scan(dataset)
 
     # Attach PII summary to result for JSON output
     audit_result.pii_summary = pii_report
+
+    # ---- Drift Detection (if tracking) ----
+    if track:
+        try:
+            from dataintegrity.core.store import LocalVersionStore
+            from dataintegrity.core.versioning import DatasetVersion
+            from dataintegrity.drift.ks import compare_dataset_columns
+            
+            store = LocalVersionStore()
+            if store.exists(source_label):
+                previous = store.load_latest(source_label)
+                if previous._raw_df is not None:
+                    ks_results = compare_dataset_columns(
+                        old_df=previous._raw_df,
+                        new_df=dataset.df,
+                        config=config
+                    )
+                    drift_results = []
+                    for col, res in ks_results.items():
+                        if isinstance(res, dict) and "error" not in res:
+                            res["column"] = col
+                            drift_results.append(res)
+                    audit_result.drift_results = drift_results
+        except ImportError:
+            pass
+
+    # ---- Policy Engine ----
+    policy_evaluation = None
+    if policy:
+        if output_format != "json":
+            click.echo(f"⚖️   Evaluating policy: {policy} …")
+        from dataintegrity.policies import POLICY_REGISTRY
+        pol_obj = POLICY_REGISTRY.get(policy.lower())
+        if pol_obj:
+            # We pass the full dict for evaluation
+            policy_evaluation = pol_obj.evaluate(audit_result.to_dict())
+            audit_result.policy_evaluation = policy_evaluation
 
     # ---- Save Manifest ----
     if save_manifest:
@@ -298,9 +352,10 @@ def audit(
         manifest_filename = f"{source_id}.manifest.json" if dsn else Path(filepath).with_suffix(".manifest.json") # type: ignore
         manifest_path = Path(manifest_filename)
         manifest_path.write_text(audit_result.manifest.to_json(), encoding="utf-8")
-        click.echo(
-            f"📄  Manifest saved → {click.style(str(manifest_path), fg='cyan')}"
-        )
+        if output_format != "json":
+            click.echo(
+                f"📄  Manifest saved → {click.style(str(manifest_path), fg='cyan')}"
+            )
 
     # ---- Save History ----
     if save_history:
@@ -308,14 +363,16 @@ def audit(
             from dataintegrity.integrity.history import IntegrityHistoryTracker
             tracker = IntegrityHistoryTracker()
             history_path = tracker.record(audit_result)
-            click.echo(
-                f"📈  History recorded → {click.style(str(history_path), fg='cyan')}"
-            )
+            if output_format != "json":
+                click.echo(
+                    f"📈  History recorded → {click.style(str(history_path), fg='cyan')}"
+                )
         except Exception as exc:  # pragma: no cover
-            click.echo(
-                click.style(f"⚠  Could not save history: {exc}", fg="yellow"),
-                err=True,
-            )
+            if output_format != "json":
+                click.echo(
+                    click.style(f"⚠  Could not save history: {exc}", fg="yellow"),
+                    err=True,
+                )
 
     # ---- Output ----
     if output_format == "json":
@@ -325,7 +382,18 @@ def audit(
 
     # Human-readable audit report — uses legacy dict for renderer compat
     legacy = audit_result.to_legacy_dict()
-    _print_audit_report(source_label, legacy, pii_report, dataset) # type: ignore
+    _print_audit_report(
+        source_label, 
+        legacy, 
+        pii_report, 
+        dataset, 
+        standards_alignment=audit_result.standards_alignment,
+        policy_evaluation=policy_evaluation
+    ) # type: ignore
+
+    # ---- Enforcement ----
+    if policy_evaluation and policy_evaluation["status"] == "FAIL":
+        sys.exit(1)
 
     # ---- Versioning / History ----
     if track or history:
@@ -474,7 +542,14 @@ def _print_comparison_report(report: dict, divider: str) -> None:
 # Audit report renderer
 # ---------------------------------------------------------------------------
 
-def _print_audit_report(filepath: str, result: dict, pii_report: dict, dataset: Dataset) -> None:
+def _print_audit_report(
+    filepath: str, 
+    result: dict, 
+    pii_report: dict, 
+    dataset: Dataset,
+    standards_alignment: Optional[dict] = None,
+    policy_evaluation: Optional[dict] = None
+) -> None:
     """Render a human-readable audit report to stdout."""
     w = 60
     divider = click.style("─" * w, fg="bright_black")
@@ -534,5 +609,40 @@ def _print_audit_report(filepath: str, result: dict, pii_report: dict, dataset: 
                 click.style(f"  ⚠  {col}", fg="yellow", bold=True)
                 + f"  →  {info['count']} row(s) affected  [{patterns}]"
             )
+
+    # Standards Alignment (ISO 25012)
+    if standards_alignment:
+        click.echo(f"\n{divider}")
+        click.echo(click.style(f"  {standards_alignment['profile']} ALIGNMENT", bold=True, fg="bright_white"))
+        click.echo(divider)
+        
+        chars = standards_alignment.get("characteristics", {})
+        for char, info in chars.items():
+            status = info["status"]
+            if status == "PASS":
+                status_style = click.style(f"{status:<16}", fg="green", bold=True)
+            elif status == "MINOR_ISSUES":
+                status_style = click.style(f"{status:<16}", fg="cyan")
+            elif status == "MODERATE_ISSUES":
+                status_style = click.style(f"{status:<16}", fg="yellow")
+            else:
+                status_style = click.style(f"{status:<16}", fg="red", bold=True)
+            
+            click.echo(f"  {char:<14} {status_style}")
+
+    # Policy Evaluation
+    if policy_evaluation:
+        click.echo(f"\n{divider}")
+        click.echo(click.style(f"  POLICY EVALUATION ({policy_evaluation['policy']})", bold=True, fg="bright_white"))
+        click.echo(divider)
+        
+        status = policy_evaluation["status"]
+        if status == "PASS":
+            click.echo(f"  Status: {click.style('PASS', fg='green', bold=True)}")
+        else:
+            click.echo(f"  Status: {click.style('FAIL', fg='red', bold=True)}")
+            click.echo("  Violations:")
+            for violation in policy_evaluation["violations"]:
+                click.echo(f"    - {violation}")
 
     click.echo(f"\n{divider}\n")

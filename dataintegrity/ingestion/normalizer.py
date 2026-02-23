@@ -64,7 +64,8 @@ def normalize_datatypes(
     timestamp_columns = timestamp_columns or []
 
     if coerce_numeric:
-        for col in df.select_dtypes(include="object").columns:
+        # Explicitly include string to silence Pandas4Warning and ensure future compat
+        for col in df.select_dtypes(include=["object", "string"]).columns:
             if col in timestamp_columns:
                 continue
             converted = pd.to_numeric(df[col], errors="coerce")

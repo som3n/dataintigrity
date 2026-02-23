@@ -2,7 +2,7 @@
 dataintegrity — Data Infrastructure SDK v0.2
 """
 
-__version__ = "0.2.1"
+__version__ = "0.2.2"
 __author__ = "dataintegrity"
 
 from dataintegrity.core.dataset import Dataset

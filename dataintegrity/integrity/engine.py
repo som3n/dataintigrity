@@ -80,39 +80,57 @@ class IntegrityEngine:
     # Public API
     # ------------------------------------------------------------------
 
-    def run(self, dataset: Dataset) -> DatasetAuditResult:
+    def run(self, dataset: Dataset, profile: Optional[str] = None) -> DatasetAuditResult:
         """
         Execute the full integrity pipeline against the dataset.
 
         Steps
         -----
-        1. Compute a config hash for the manifest.
-        2. Run every rule in :data:`~dataintegrity.integrity.rules.RULE_REGISTRY`.
-        3. Build a :class:`~dataintegrity.core.result_schema.RuleResult` per rule.
-        4. Compute the composite DataScore with severity risk weighting.
-        5. Generate an :class:`~dataintegrity.core.execution.ExecutionManifest`.
-        6. Persist a summary into ``dataset.profile``.
-        7. Return a :class:`~dataintegrity.core.result_schema.DatasetAuditResult`.
+        1. Handle profile-specific overrides (e.g. ISO-25012 weights).
+        2. Compute a config hash for the manifest.
+        3. Run every rule in :data:`~dataintegrity.integrity.rules.RULE_REGISTRY`.
+        4. Build a :class:`~dataintegrity.core.result_schema.RuleResult` per rule.
+        5. Compute the composite DataScore with severity risk weighting.
+        6. If profile selected, evaluate standards alignment.
+        7. Generate an :class:`~dataintegrity.core.execution.ExecutionManifest`.
+        8. Return a :class:`~dataintegrity.core.result_schema.DatasetAuditResult`.
 
         Args:
             dataset: The dataset to audit.
+            profile: Optional standards alignment profile (e.g. "iso-25012").
 
         Returns:
             A :class:`~dataintegrity.core.result_schema.DatasetAuditResult`.
-            Call :meth:`~dataintegrity.core.result_schema.DatasetAuditResult.to_legacy_dict`
-            for the v0.2.0-compatible ``dict`` format.
         """
-        config_hash = compute_config_hash(self.config)
+        config = self.config
+        
+        # 1. Profile-specific overrides
+        alignment_data = None
+        if profile == "iso-25012":
+            from dataintegrity.standards.iso_25012 import (
+                evaluate_iso_25012_alignment,
+                ISO_25012_DEFAULT_WEIGHTS
+            )
+            # Override weights if user hasn't passed a custom config with weights
+            # (Check if config is the DEFAULT_CONFIG to detect 'no custom config')
+            if config is DEFAULT_CONFIG:
+                config = IntegrityConfig(
+                    score_weights=ISO_25012_DEFAULT_WEIGHTS,
+                    drift_p_threshold=config.drift_p_threshold,
+                    timeliness_max_age_days=config.timeliness_max_age_days
+                )
+
+        config_hash = compute_config_hash(config)
         dimension_scores: Dict[str, float] = {}
 
         # ----------------------------------------------------------------
-        # 1. Run all rules
+        # 2. Run all rules
         # ----------------------------------------------------------------
         for rule_name, rule_fn in RULE_REGISTRY.items():
             try:
                 score = rule_fn(
                     dataset,
-                    config=self.config,
+                    config=config,
                     timestamp_columns=self.timestamp_columns,
                     column_groups=self.column_groups,
                 )
@@ -126,9 +144,10 @@ class IntegrityEngine:
                 )
 
         # ----------------------------------------------------------------
-        # 2. Compute score with severity risk weighting
+        # 3. Compute score with severity risk weighting
         # ----------------------------------------------------------------
-        score_result = self._scorer.compute(
+        scorer = DataScorer(config=config)
+        score_result = scorer.compute(
             dimension_scores,
             rule_severities=RULE_SEVERITY,
         )
@@ -136,7 +155,17 @@ class IntegrityEngine:
         breakdown: Dict[str, Any] = score_result["breakdown"]  # type: ignore[assignment]
 
         # ----------------------------------------------------------------
-        # 3. Build typed RuleResult list
+        # 4. Standards Alignment evaluation
+        # ----------------------------------------------------------------
+        if profile == "iso-25012":
+            from dataintegrity.standards.iso_25012 import evaluate_iso_25012_alignment
+            alignment_data = {
+                "profile": "ISO/IEC 25012",
+                "characteristics": evaluate_iso_25012_alignment(dimension_scores)
+            }
+
+        # ----------------------------------------------------------------
+        # 5. Build typed RuleResult list
         # ----------------------------------------------------------------
         rule_results: List[RuleResult] = []
         for rule_name in RULE_REGISTRY:
@@ -159,7 +188,7 @@ class IntegrityEngine:
             )
 
         # ----------------------------------------------------------------
-        # 4. Build ExecutionManifest
+        # 6. Build ExecutionManifest
         # ----------------------------------------------------------------
         manifest = ExecutionManifest.create(
             dataset_fingerprint=dataset.fingerprint,
@@ -170,7 +199,7 @@ class IntegrityEngine:
         )
 
         # ----------------------------------------------------------------
-        # 5. Assemble structured result
+        # 7. Assemble structured result
         # ----------------------------------------------------------------
         audit_result = DatasetAuditResult(
             manifest=manifest,
@@ -182,10 +211,11 @@ class IntegrityEngine:
             dimension_scores=dimension_scores,
             shape=dataset.shape,
             source=dataset.source,
+            standards_alignment=alignment_data,
         )
 
         # ----------------------------------------------------------------
-        # 6. Persist summary into dataset.profile (backward compat)
+        # 8. Persist summary into dataset.profile (backward compat)
         # ----------------------------------------------------------------
         dataset.profile.update(audit_result.to_legacy_dict())
 
