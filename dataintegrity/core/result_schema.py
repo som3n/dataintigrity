@@ -108,6 +108,8 @@ class DatasetAuditResult:
     breakdown: Dict[str, Dict[str, float]]
     dimension_scores: Dict[str, float]
     shape: Tuple[int, int]
+    schema_version: str = "0.3"
+    fingerprint: Dict[str, Any] = field(default_factory=dict)
     source: Optional[str] = None
     standards_alignment: Optional[Dict[str, Any]] = None
     policy_evaluation: Optional[Dict[str, Any]] = None
@@ -133,6 +135,8 @@ class DatasetAuditResult:
             "breakdown": self.breakdown,
             "dimension_scores": self.dimension_scores,
             "shape": list(self.shape),
+            "schema_version": self.schema_version,
+            "fingerprint": self.fingerprint,
             "source": self.source,
             "standards_alignment": self.standards_alignment,
             "policy_evaluation": self.policy_evaluation,

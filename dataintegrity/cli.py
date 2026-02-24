@@ -130,7 +130,11 @@ def cli():
 )
 @click.option(
     "--policy", type=click.Choice(["research", "production"], case_sensitive=False),
-    help="Enforce a governance policy (e.g. research, production).",
+    help="Enforce a built-in governance policy (e.g. research, production).",
+)
+@click.option(
+    "--policy-file", type=click.Path(exists=True, dir_okay=False),
+    help="Path to a YAML policy file to enforce thresholds.",
 )
 @click.option(
     "--encoding", default="utf-8-sig", show_default=True,
@@ -185,6 +189,7 @@ def audit(
     query: Optional[str],
     profile: Optional[str],
     policy: Optional[str],
+    policy_file: Optional[str],
     encoding: str,
     delimiter: str,
     no_normalize: bool,
@@ -336,7 +341,19 @@ def audit(
 
     # ---- Policy Engine ----
     policy_evaluation = None
-    if policy:
+    
+    if policy_file:
+        if output_format != "json":
+            click.echo(f"⚖️   Evaluating policy file: {Path(policy_file).name} …")
+        from dataintegrity.policies.file_policy import FilePolicy
+        try:
+            pol_obj = FilePolicy(policy_file)
+            policy_evaluation = pol_obj.evaluate(audit_result.to_dict())
+            audit_result.policy_evaluation = policy_evaluation
+        except Exception as exc:
+            click.echo(click.style(f"\n✗  Policy error: {exc}", fg="red"), err=True)
+            sys.exit(1)
+    elif policy:
         if output_format != "json":
             click.echo(f"⚖️   Evaluating policy: {policy} …")
         from dataintegrity.policies import POLICY_REGISTRY
@@ -374,6 +391,11 @@ def audit(
                     err=True,
                 )
 
+    # ---- Enforcement (JSON) ----
+    if output_format == "json" and policy_evaluation and policy_evaluation["status"] == "FAIL":
+        click.echo(json.dumps(audit_result.to_dict(), indent=2, default=str))
+        sys.exit(1)
+
     # ---- Output ----
     if output_format == "json":
         full_output = audit_result.to_dict()
@@ -391,7 +413,7 @@ def audit(
         policy_evaluation=policy_evaluation
     ) # type: ignore
 
-    # ---- Enforcement ----
+    # ---- Enforcement (Pretty) ----
     if policy_evaluation and policy_evaluation["status"] == "FAIL":
         sys.exit(1)
 

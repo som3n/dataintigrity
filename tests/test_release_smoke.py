@@ -7,7 +7,6 @@ def test_sdk_version():
     result = runner.invoke(cli, ["--version"])
     assert result.exit_code == 0
     assert result.output.strip() == f"dataintegrity {__version__}"
-    assert "0.2.2" in result.output
 
 def test_cli_help_text():
     runner = CliRunner()

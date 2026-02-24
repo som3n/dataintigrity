@@ -28,6 +28,7 @@ from dataintegrity.core.config import IntegrityConfig, DEFAULT_CONFIG
 from dataintegrity.core.config_hashing import compute_config_hash
 from dataintegrity.core.dataset import Dataset
 from dataintegrity.core.execution import ExecutionManifest
+from dataintegrity.core.hashing import compute_structured_fingerprint
 from dataintegrity.core.result_schema import DatasetAuditResult, RuleResult
 from dataintegrity.integrity.rules import (
     RULE_REGISTRY,
@@ -165,7 +166,12 @@ class IntegrityEngine:
             }
 
         # ----------------------------------------------------------------
-        # 5. Build typed RuleResult list
+        # 5. Compute structured fingerprint (v0.3.0)
+        # ----------------------------------------------------------------
+        structured_fingerprint = compute_structured_fingerprint(dataset.df)
+
+        # ----------------------------------------------------------------
+        # 6. Build typed RuleResult list
         # ----------------------------------------------------------------
         rule_results: List[RuleResult] = []
         for rule_name in RULE_REGISTRY:
@@ -188,7 +194,7 @@ class IntegrityEngine:
             )
 
         # ----------------------------------------------------------------
-        # 6. Build ExecutionManifest
+        # 7. Build ExecutionManifest
         # ----------------------------------------------------------------
         manifest = ExecutionManifest.create(
             dataset_fingerprint=dataset.fingerprint,
@@ -199,7 +205,7 @@ class IntegrityEngine:
         )
 
         # ----------------------------------------------------------------
-        # 7. Assemble structured result
+        # 8. Assemble structured result
         # ----------------------------------------------------------------
         audit_result = DatasetAuditResult(
             manifest=manifest,
@@ -210,12 +216,13 @@ class IntegrityEngine:
             breakdown=breakdown,
             dimension_scores=dimension_scores,
             shape=dataset.shape,
+            fingerprint=structured_fingerprint,
             source=dataset.source,
             standards_alignment=alignment_data,
         )
 
         # ----------------------------------------------------------------
-        # 8. Persist summary into dataset.profile (backward compat)
+        # 9. Persist summary into dataset.profile (backward compat)
         # ----------------------------------------------------------------
         dataset.profile.update(audit_result.to_legacy_dict())
 

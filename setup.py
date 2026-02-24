@@ -16,7 +16,7 @@ with open("requirements.txt", encoding="utf-8") as f:
 
 setup(
     name="dataintegrity",
-    version="0.2.2",
+    version="0.3.0",
     author="dataintegrity",
     description="A production-grade data infrastructure SDK for integrity, quality, and drift detection.",
     long_description=long_description,

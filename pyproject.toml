@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dataintegrity"
-version = "0.2.2"
+version = "0.3.0"
 description = "A production-grade data infrastructure SDK for integrity, quality, and drift detection."
 readme = "README.md"
 license = { file = "LICENSE" }
