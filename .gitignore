@@ -154,4 +154,3 @@ cython_debug/
 *.manifest.json
 test_policy.yaml
 fail_policy.yaml
-.gemini/
