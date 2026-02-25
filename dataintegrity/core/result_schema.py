@@ -121,16 +121,23 @@ class DatasetAuditResult:
     def to_dict(self) -> Dict[str, Any]:
         """
         Return a fully-structured dictionary representation.
-
-        Returns:
-            Dict containing the manifest, all rule results, drift data,
-            PII summary, and scoring information.
+        Requirement 2 & 3: pii_findings (flat list) and pii_summary (block).
         """
+        # Collect flat findings from all columns
+        flat_findings = []
+        for col, report in self.pii_summary.items():
+            if col == "pii_summary": continue
+            if isinstance(report, dict) and "pii_findings" in report:
+                flat_findings.extend(report["pii_findings"])
+
+        summary_block = self.pii_summary.get("pii_summary", {})
+
         return {
             "manifest": self.manifest.to_dict(),
             "rule_results": [r.to_dict() for r in self.rule_results],
             "drift_results": self.drift_results,
-            "pii_summary": self.pii_summary,
+            "pii_findings": flat_findings,
+            "pii_summary": summary_block,
             "overall_score": self.overall_score,
             "breakdown": self.breakdown,
             "dimension_scores": self.dimension_scores,
@@ -179,4 +186,5 @@ class DatasetAuditResult:
             "shape": self.shape,
             "source": self.source,
             "rules_run": self.manifest.rules_executed,
+            "pii_summary": self.pii_summary,
         }

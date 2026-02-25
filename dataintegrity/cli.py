@@ -616,20 +616,31 @@ def _print_audit_report(
 
     # PII Report
     click.echo(f"\n{divider}")
+    # PII Report (Structured Render)
+    click.echo(f"\n{divider}")
     click.echo(click.style("  PII SCAN REPORT", bold=True, fg="bright_white"))
     click.echo(divider)
 
-    pii_hits = {col: info for col, info in pii_report.items() if info["pii_detected"]}
-    if not pii_hits:
+    # In v0.3.1, pii_report is the dict from to_dict() which has pii_findings as a list
+    findings_list = pii_report.get("pii_findings", [])
+    
+    if not findings_list:
         click.echo(click.style("  ✓  No PII detected across all columns.", fg="green"))
     else:
-        for col, info in pii_hits.items():
-            patterns = ", ".join(
-                f"{k}:{v}" for k, v in info["patterns_hit"].items() if v > 0
-            )
+        # Group by column for display
+        by_col = {}
+        for f in findings_list:
+            col = f["column"]
+            if col not in by_col: by_col[col] = []
+            by_col[col].append(f)
+            
+        for col, findings in by_col.items():
+            types = ", ".join(f"{f['dominant_type']}" for f in findings)
+            max_matches = max((f["matches"] for f in findings), default=0)
+            
             click.echo(
                 click.style(f"  ⚠  {col}", fg="yellow", bold=True)
-                + f"  →  {info['count']} row(s) affected  [{patterns}]"
+                + f"  →  {max_matches} row(s) potentially affected  [{types}]"
             )
 
     # Standards Alignment (ISO 25012)

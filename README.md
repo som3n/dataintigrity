@@ -2,7 +2,7 @@
 
 **A production-grade Python SDK for data integrity, quality scoring, PII detection, statistical drift detection, and reproducible auditing.**
 
-> v0.3.0 — Structured data lineage with fingerprinting and YAML policy enforcement
+> v0.3.1 — Governance-Grade PII Enforcement and Priority-Based Resolution
 
 ---
 
@@ -15,7 +15,9 @@
 | Large CSV Safety (auto-sampling) | ✅ |
 | Column Normalisation | ✅ |
 | Schema Contract Enforcement | ✅ |
-| PII Detection (Email, Phone, SSN, etc.) | ✅ |
+| **Governance PII Detection (v0.3.1)** | ✅ |
+| **Priority-Based Resolution (v0.3.1)** | ✅ |
+| **FP Guardrails & Entropy Checks (v0.3.1)** | ✅ |
 | Completeness, Uniqueness, Validity, Consistency, Timeliness Rules | ✅ |
 | Rule Plugin System | ✅ |
 | Risk-Weighted DataScore | ✅ |
@@ -86,12 +88,18 @@ Every run produces an `ExecutionManifest` (record) or `.manifest.json` file. Thi
 * **Environment Fingerprint**: OS, Python, and exact library versions (Pandas, NumPy, etc.).
 * **Config Hash**: A SHA-256 hash of your settings to ensure audits are reproducible.
 
-### Policy Engine
-Control your CI/CD pipelines by enforcing strict quality bars via built-in profiles or external files:
 ```bash
 # Fail CI if data doesn't meet organizational overheads
 dataintegrity audit data.csv --policy-file quality_gate.yaml
 ```
+
+### Governance PII Enrichment (v0.3.1)
+The PII engine has been upgraded to meet production-ready governance standards:
+* **Priority Resolution**: Overlapping matches (e.g., Credit Card vs Aadhaar) are resolved using a deterministic priority registry.
+* **Deterministic Sampling**: For massive datasets, PII scanning automatically switches to deterministic row-based sampling to maintain performance.
+* **Risk Aggregation**: PII findings now provide column-level `highest_risk` and `match_ratio` metrics.
+* **False Positive Guardrails**: Integrated checks for sequential numbers, repeating digits, and Shannon entropy boost precision.
+* **Policy Enforcement**: YAML policies now support `block_high_risk`, `max_medium_risk_ratio`, and `allow_low_risk` rules.
 
 ---
 

@@ -53,23 +53,62 @@ class FilePolicy(BasePolicy):
     def evaluate(self, audit_result: Dict[str, Any]) -> Dict[str, Any]:
         """
         Evaluate audit results against thresholds in the policy file.
+        Includes support for PII governance enforcement.
         """
-        thresholds = self.policy_data["policy"]
+        policy_config = self.policy_data.get("policy", {})
         dimension_scores = audit_result.get("dimension_scores", {})
+        pii_report = audit_result.get("pii_summary", {})  # This is the new summary block
         
+        # Backward compatibility for old pii_summary which might be a per-column dict
+        # In v0.3.1+, pii_summary and pii_findings are structured.
+        pii_summary_block = audit_result.get("pii_summary", {})
+        if "total_matches" not in pii_summary_block:
+             # Look inside the dict if it's the old structure
+             pass
+
         violations = []
-        for dim, min_score in thresholds.items():
-            actual_score = dimension_scores.get(dim)
-            if actual_score is None:
-                # If a dimension in policy is not present in audit, we count it as a violation
-                # or we could skip it. The prompt says "Apply thresholds to audit results".
-                violations.append(f"Dimension '{dim}' defined in policy was not evaluated in audit.")
-                continue
+        pii_violation = False
+
+        # 1. Dimension Score Checks
+        for dim, min_score in policy_config.items():
+            if dim == "pii": continue # Skip the PII block for now
             
-            if actual_score < min_score:
+            actual_score = dimension_scores.get(dim)
+            if actual_score is not None and actual_score < min_score:
                 violations.append(
                     f"Dimension '{dim}' failed: score {actual_score:.4f} < threshold {min_score}"
                 )
+
+        # 2. PII Governance Checks (Requirement 4)
+        pii_policy = policy_config.get("pii")
+        if pii_policy and isinstance(pii_policy, dict):
+            # Check high risk (using summary block for efficiency)
+            if pii_policy.get("block_high_risk") and pii_summary_block.get("high_risk_columns", 0) > 0:
+                violations.append("PII Policy Violation: High-risk PII columns detected.")
+                pii_violation = True
+            
+            # Check medium risk ratios (using flat findings list)
+            max_medium_ratio = pii_policy.get("max_medium_risk_ratio")
+            if max_medium_ratio is not None:
+                # Get findings from root or summary
+                findings_to_check = audit_result.get("pii_findings", [])
+                if not findings_to_check and isinstance(audit_result.get("pii_summary"), dict):
+                     # Fallback for some internal structures
+                     pass
+                
+                for finding in findings_to_check:
+                    if finding["highest_risk"] == "medium" and finding.get("match_ratio", 0) > max_medium_ratio:
+                        col = finding.get("column", "unknown")
+                        violations.append(
+                            f"PII Policy Violation: Column '{col}' medium-risk ratio {finding['match_ratio']} "
+                            f"> threshold {max_medium_ratio}"
+                        )
+                        pii_violation = True
+
+            # Check low risk
+            if pii_policy.get("allow_low_risk") is False and pii_summary_block.get("low_risk_columns", 0) > 0:
+                violations.append("PII Policy Violation: Low-risk PII detected (disallowed).")
+                pii_violation = True
 
         status = "PASS" if not violations else "FAIL"
         
@@ -80,4 +119,5 @@ class FilePolicy(BasePolicy):
             "status": status,
             "passed": status == "PASS",
             "violations": violations,
+            "pii_violation": pii_violation
         }

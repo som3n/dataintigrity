@@ -205,13 +205,20 @@ class IntegrityEngine:
         )
 
         # ----------------------------------------------------------------
-        # 8. Assemble structured result
+        # 8. PII Scan (Requirement 3 integration)
+        # ----------------------------------------------------------------
+        from dataintegrity.ingestion.pii import PIIDetector
+        pii_detector = PIIDetector(config=config)
+        pii_report = pii_detector.scan(dataset)
+
+        # ----------------------------------------------------------------
+        # 9. Assemble structured result
         # ----------------------------------------------------------------
         audit_result = DatasetAuditResult(
             manifest=manifest,
             rule_results=rule_results,
             drift_results=[],
-            pii_summary={},
+            pii_summary=pii_report,
             overall_score=overall_score,
             breakdown=breakdown,
             dimension_scores=dimension_scores,
