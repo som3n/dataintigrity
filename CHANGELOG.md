@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.1] – PII Reliability & Formatting Fixes
+
+### Added
+- **Decimal Guardrail**: Numeric columns with non-zero fractional parts are now automatically excluded from PII scans for IDs and Phones.
+- **Pure-Digit Guardrail**: Broad PII patterns (Passport, Phone) are now ignored in numeric columns if they consist entirely of digits, preventing quantities from being flagged.
+
+### Fixed
+- **CLI PII Reporting**: Fixed a bug where the text audit report incorrectly showed "No PII detected" when findings were present in the results dictionary.
+
 ## [0.3.0] – Fingerprinting & YAML Policy Release
 
 ### Added
