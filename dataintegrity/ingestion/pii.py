@@ -158,15 +158,34 @@ class PIIDetector:
 
         # Row-level match tracking for Priority Resolution (Requirement 1)
         row_matches: Dict[int, List[Dict[str, Any]]] = {}
+        
+        # Robust Guardrails (Requirement 5+)
+        is_numeric = pd.api.types.is_numeric_dtype(series)
+        has_decimals = False
+        if is_numeric:
+            # Check for non-zero fractional parts
+            # We sample to stay performant on large numeric columns
+            sample_numeric = series.dropna().head(1000)
+            if not sample_numeric.empty:
+                has_decimals = (sample_numeric % 1 != 0).any()
 
         # 1. Configurable patterns (backward compatibility)
         for pattern_name, regex in self._compiled.items():
+            # Robust Guardrail: skip phone/ssn/cc for columns with decimals
+            if has_decimals and pattern_name in ["phone", "ssn", "credit_card"]:
+                continue
+
             for idx, val in zip(string_values.index, string_values):
                 if regex.search(val):
                     # FP Guardrails: sequential/repeating (Requirement 5)
                     if self._is_noisy(val):
                         continue
                         
+                    # Robust Guardrail: purely numeric broad matches in numeric columns
+                    if is_numeric and pattern_name == "phone" and val.isdigit():
+                        # A purely numeric 'phone' in a numeric column is likely a quantity
+                        continue
+
                     if idx not in row_matches: row_matches[idx] = []
                     row_matches[idx].append({
                         "type": pattern_name,
@@ -178,6 +197,10 @@ class PIIDetector:
 
         # 2. Global Identity Registry
         for entity, regex in self._global_compiled:
+            # Robust Guardrail: skip most identities for columns with decimals
+            if has_decimals and entity.category in ["identity", "financial"]:
+                continue
+
             for idx, val in zip(string_values.index, string_values):
                 if regex.search(val):
                     # Specialized validations
@@ -185,6 +208,11 @@ class PIIDetector:
                         continue
                     
                     if self._is_noisy(val):
+                        continue
+
+                    # Robust Guardrail: purely numeric broad matches in numeric columns
+                    if is_numeric and entity.type == "passport" and val.isdigit():
+                        # A purely numeric 'passport' in a numeric column is likely an index or quantity
                         continue
 
                     if idx not in row_matches: row_matches[idx] = []
