@@ -130,7 +130,8 @@ def cli():
 )
 @click.option(
     "--policy", type=click.Choice(["research", "production"], case_sensitive=False),
-    help="Enforce a built-in governance policy (e.g. research, production).",
+    multiple=True,
+    help="Enforce built-in governance policies (e.g. research, production). Can be repeated.",
 )
 @click.option(
     "--policy-file", type=click.Path(exists=True, dir_okay=False),
@@ -188,7 +189,7 @@ def audit(
     table: Optional[str],
     query: Optional[str],
     profile: Optional[str],
-    policy: Optional[str],
+    policy: Tuple[str, ...],
     policy_file: Optional[str],
     encoding: str,
     delimiter: str,
@@ -340,28 +341,36 @@ def audit(
             pass
 
     # ---- Policy Engine ----
-    policy_evaluation = None
+    policy_evaluations = []
     
+    # 1. Evaluate Named Policies
+    if policy:
+        from dataintegrity.policies import POLICY_REGISTRY
+        for p_name in policy:
+            if output_format != "json":
+                click.echo(f"⚖️   Evaluating policy: {p_name} …")
+            pol_obj = POLICY_REGISTRY.get(p_name.lower())
+            if pol_obj:
+                eval_res = pol_obj.evaluate(audit_result.to_dict())
+                policy_evaluations.append(eval_res)
+
+    # 2. Evaluate Policy File
     if policy_file:
         if output_format != "json":
             click.echo(f"⚖️   Evaluating policy file: {Path(policy_file).name} …")
         from dataintegrity.policies.file_policy import FilePolicy
         try:
             pol_obj = FilePolicy(policy_file)
-            policy_evaluation = pol_obj.evaluate(audit_result.to_dict())
-            audit_result.policy_evaluation = policy_evaluation
+            eval_res = pol_obj.evaluate(audit_result.to_dict())
+            policy_evaluations.append(eval_res)
         except Exception as exc:
             click.echo(click.style(f"\n✗  Policy error: {exc}", fg="red"), err=True)
             sys.exit(1)
-    elif policy:
-        if output_format != "json":
-            click.echo(f"⚖️   Evaluating policy: {policy} …")
-        from dataintegrity.policies import POLICY_REGISTRY
-        pol_obj = POLICY_REGISTRY.get(policy.lower())
-        if pol_obj:
-            # We pass the full dict for evaluation
-            policy_evaluation = pol_obj.evaluate(audit_result.to_dict())
-            audit_result.policy_evaluation = policy_evaluation
+
+    # Store results
+    audit_result.policy_evaluations = policy_evaluations
+    if policy_evaluations:
+        audit_result.policy_evaluation = policy_evaluations[-1] # Backward compat: store last
 
     # ---- Save Manifest ----
     if save_manifest:
@@ -392,7 +401,7 @@ def audit(
                 )
 
     # ---- Enforcement (JSON) ----
-    if output_format == "json" and policy_evaluation and policy_evaluation["status"] == "FAIL":
+    if output_format == "json" and any(e["status"] == "FAIL" for e in audit_result.policy_evaluations):
         click.echo(json.dumps(audit_result.to_dict(), indent=2, default=str))
         sys.exit(1)
 
@@ -410,11 +419,11 @@ def audit(
         pii_report, 
         dataset, 
         standards_alignment=audit_result.standards_alignment,
-        policy_evaluation=policy_evaluation
+        audit_result=audit_result
     ) # type: ignore
 
     # ---- Enforcement (Pretty) ----
-    if policy_evaluation and policy_evaluation["status"] == "FAIL":
+    if any(e["status"] == "FAIL" for e in audit_result.policy_evaluations):
         sys.exit(1)
 
     # ---- Versioning / History ----
@@ -570,7 +579,7 @@ def _print_audit_report(
     pii_report: dict, 
     dataset: Dataset,
     standards_alignment: Optional[dict] = None,
-    policy_evaluation: Optional[dict] = None
+    audit_result: Optional[DatasetAuditResult] = None
 ) -> None:
     """Render a human-readable audit report to stdout."""
     w = 60
@@ -621,8 +630,16 @@ def _print_audit_report(
     click.echo(click.style("  PII SCAN REPORT", bold=True, fg="bright_white"))
     click.echo(divider)
 
-    # In v0.3.1, pii_report is the dict from to_dict() which has pii_findings as a list
-    findings_list = pii_report.get("pii_findings", [])
+    # In v0.3.1, pii_report might be the raw scan results keyed by column
+    if "pii_findings" in pii_report:
+        findings_list = pii_report["pii_findings"]
+    else:
+        # Aggregate from per-column reports
+        findings_list = []
+        for col, report in pii_report.items():
+            if col == "pii_summary": continue
+            if isinstance(report, dict) and "pii_findings" in report:
+                findings_list.extend(report["pii_findings"])
     
     if not findings_list:
         click.echo(click.style("  ✓  No PII detected across all columns.", fg="green"))
@@ -664,18 +681,19 @@ def _print_audit_report(
             click.echo(f"  {char:<14} {status_style}")
 
     # Policy Evaluation
-    if policy_evaluation:
-        click.echo(f"\n{divider}")
-        click.echo(click.style(f"  POLICY EVALUATION ({policy_evaluation['policy']})", bold=True, fg="bright_white"))
-        click.echo(divider)
-        
-        status = policy_evaluation["status"]
-        if status == "PASS":
-            click.echo(f"  Status: {click.style('PASS', fg='green', bold=True)}")
-        else:
-            click.echo(f"  Status: {click.style('FAIL', fg='red', bold=True)}")
-            click.echo("  Violations:")
-            for violation in policy_evaluation["violations"]:
-                click.echo(f"    - {violation}")
+    if audit_result.policy_evaluations:
+        for evaluation in audit_result.policy_evaluations:
+            click.echo(f"\n{divider}")
+            click.echo(click.style(f"  POLICY EVALUATION ({evaluation['policy']})", bold=True, fg="bright_white"))
+            click.echo(divider)
+            
+            status = evaluation["status"]
+            if status == "PASS":
+                click.echo(f"  Status: {click.style('PASS', fg='green', bold=True)}")
+            else:
+                click.echo(f"  Status: {click.style('FAIL', fg='red', bold=True)}")
+                click.echo("  Violations:")
+                for violation in evaluation["violations"]:
+                    click.echo(f"    - {violation}")
 
     click.echo(f"\n{divider}\n")

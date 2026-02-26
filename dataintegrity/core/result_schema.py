@@ -112,6 +112,7 @@ class DatasetAuditResult:
     fingerprint: Dict[str, Any] = field(default_factory=dict)
     source: Optional[str] = None
     standards_alignment: Optional[Dict[str, Any]] = None
+    policy_evaluations: List[Dict[str, Any]] = field(default_factory=list)
     policy_evaluation: Optional[Dict[str, Any]] = None
 
     # ------------------------------------------------------------------
@@ -146,6 +147,7 @@ class DatasetAuditResult:
             "fingerprint": self.fingerprint,
             "source": self.source,
             "standards_alignment": self.standards_alignment,
+            "policy_evaluations": self.policy_evaluations,
             "policy_evaluation": self.policy_evaluation,
         }
 
