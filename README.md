@@ -37,7 +37,7 @@
 # Recommended: Editable install for development
 pip install -e ".[dev]"
 
-# Direct install
+# Direct install - will be added soon
 pip install dataintegrity
 ```
 
